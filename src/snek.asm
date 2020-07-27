@@ -45,46 +45,22 @@ SAVED_TERMIOS:  equ     1
 NCOLS:          equ     40
 WIDTH:          equ     NCOLS+1
 NROWS:          equ     12
-MAXS:           equ     (NROWS-2)*(NCOLS-2)      
+MAXS:           equ     (NROWS-2)*(NCOLS-2)
 DELAYms:        equ     200
-
-struc           queue
-.data:          resd    MAXS
-.size:          resd    1
-endstruc
         
 section .data
 error_msg:      db      'I did a poo poo', 10, 0
 go_up_cmd:      db      27, "[1A", 0
-score_msg:      db      'Score: ', 0
 win_msg:        db      'Congratulations! You WON!', 10, 0
 lose_msg:       db      'YOU DIED', 10, 0
 curr_dir:       dd      0
 tty_state:      dd      0
 game_state:     dd      0
-        
-board:
-times   NCOLS   db      '#'
-                db      10
-%rep    NROWS-2
-                db      '#'
-times   NCOLS-2 db      ' '
-                db      '#', 10
-%endrep
-times   NCOLS   db      '#'
-                db      10, 0
-
+fruit_rate:     dd      0.1
 delay:
 istruc          timespec
 at tv_sec,      dd      0
 at tv_nsec,     dd      DELAYms * 1000000
-iend
-
-snake:
-istruc          queue
-at queue.data,  dd      WIDTH * NROWS/2 + WIDTH/2
-times   MAXS-1  dd      0
-at queue.size,  dd      1
 iend
 
 section .bss
@@ -95,11 +71,10 @@ input:          resd    1
 
 section .text
 global _start
-
+extern update, printBoard
 _start:
-        ; initialize the snake of size 1 in the center of the board
-        mov     dword   esi, [snake+queue.data+0]
-        mov     byte    [board+esi], '@'
+        ; initialize st0 with rate of random spawns
+        fld     dword   [fruit_rate]
         ; disable echoing and line buffering
         ;; get old_tty_io and save it for restoring purposes
         mov     dword   eax, SYS_IOCTL
@@ -108,7 +83,7 @@ _start:
         mov     dword   edx, old_tty_io
         int     byte    0x80
         test    dword   eax, eax
-        js      near   .error
+        js      near    .error
         or      dword   [tty_state], SAVED_TERMIOS
         ;; copy old_tty_io to new_tty_io
         cld
@@ -121,7 +96,7 @@ _start:
         and     dword   eax, (~(INCLR | IGNCR | ICRNL | IXON | IXOFF))
         mov     dword   [new_tty_io+c_iflag], eax
         mov     dword   eax, [new_tty_io+c_lflag]
-        and     dword   eax, (~(ECHO | ICANON | ISIG))
+        and     dword   eax, (~(ECHO | ICANON))
         mov     dword   [new_tty_io+c_lflag], eax
         ;; set new_tty_io
         mov     dword   eax, SYS_IOCTL
@@ -130,7 +105,7 @@ _start:
         mov     dword   edx, new_tty_io
         int     byte    0x80
         test    dword   eax, eax
-        js      near   .error
+        js      near    .error
         ; print board for the first time
         call    near    printBoard
 .gameLoop:
@@ -182,7 +157,7 @@ _start:
         int     byte    0x80
         ; while(char != <ESC>)
         cmp     byte    [char], 0x1b
-        je      short   .end
+        je      near    .end
         ; clear screen (move cursor up NROWS + 1)
         mov     dword   ecx, NROWS+1
 .cursorUp:
@@ -190,7 +165,11 @@ _start:
         call    near    printstr
         loop            .cursorUp
         ; print updated board
+        mov     dword   eax, [curr_dir]
+        mov     dword   ebx, [input]
         call    near    update
+        mov     dword   [curr_dir], eax
+        mov     dword   [game_state], ebx
         call    near    printBoard
         ; check if game ended
         cmp     dword   [game_state], -1
@@ -226,7 +205,10 @@ _start:
         mov     dword   eax, SYS_EXIT
         mov     dword   ebx, 0
         int     byte    0x80
-
+; -----------------------------------------------------------------------------
+; void restore ()
+; sets termios to its previous state when available
+; -----------------------------------------------------------------------------
 restore:
         ; check if managed to get old_tty_io
         test    dword   [tty_state], SAVED_TERMIOS
@@ -241,39 +223,3 @@ restore:
         ret
 
 
-update:
-        ; calculate new head and update curr_dir
-        mov     dword   esi, [snake+queue.data+0]
-        mov     dword   ebx, [input]
-        add     dword   esi, ebx
-        mov     dword   [curr_dir], ebx
-        ; check if game ended and update board
-        cmp     byte    [board+esi], '#'
-        je      short   .lose
-        cmp     dword   [snake+queue.size], MAXS-1
-        je      short   .win
-        mov     byte    [board+esi], '@'
-        mov     dword   edi, [snake+queue.data+0]
-        mov     byte    [board+edi], 'O'
-        ; update snake data
-        mov     dword   [snake+queue.data+0], esi
-        ; update snake size
-        inc     dword   [snake+queue.size]
-        ret
-.win:
-        mov     dword   [game_state], +1
-        ret
-.lose:
-        mov     dword   [game_state], -1
-        ret
-
-        
-printBoard:
-        mov     dword   eax, score_msg
-        call    near    printstr
-        mov     dword   eax, [snake+queue.size]
-        call    near    printuint
-        call    near    printnl
-        mov     dword   eax, board
-        call    near    printstr
-        ret
