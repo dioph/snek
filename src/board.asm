@@ -40,26 +40,67 @@ extern randomHit, randomInt
 ; Args: curr_dir (eax), input (ebx)
 ; -----------------------------------------------------------------------------
 update:
-        ; calculate new head (esi) and update curr_dir (eax)
+	; compare cur_dir with input and possibly keep the same direction
+	mov	dword 	ecx, eax
+	mov	dword	edx, ebx
+	add	dword	ecx, edx
+	cmp	dword	ecx, 0
+	; keep input received
+	jnz	short	.keepInputDirection
+	; set input as the current direction
+	mov	dword	ebx, eax
+.keepInputDirection:	
+	; calculate new head (esi) and update curr_dir (eax)
         mov     dword   esi, [snake+queue.data+0]
         add     dword   esi, ebx ; input
         mov     dword   eax, ebx ; curr_dir
         push    dword   eax      ; save in the stack to return later
         ; check if game ended
         cmp     byte    [board+esi], '#'
-        je      short   .lose
+        je      	.lose
+	cmp	byte	[board+esi], 'O'
+	je 		.lose
         cmp     dword   [snake+queue.size], MAXS-1
-        je      short   .win
+        je      	.win
         ; didn't win nor lose: continue
         push    dword   0       ; game_state=0: continue
-        ; update head
-        mov     byte    [board+esi], '@'
-        ; TODO: update snake data
-        mov     dword   edi, [snake+queue.data+0]
-        mov     byte    [board+edi], 'O'
-        mov     dword   [snake+queue.data+0], esi
-        ; TODO: update snake size
-        inc     dword   [snake+queue.size]
+	cmp	byte	[board+esi], '*'
+	jz 	short 	.ateUpdateSnakeSize
+	jne	short 	.didntEatUpdateSnakeSize
+.ateUpdateSnakeSize:
+	;; j = ++snake.size
+	inc	dword	[snake+queue.size]
+	mov	dword	edx, [snake+queue.size]
+	;; snake.data[j-1] = snake.data[j-2]
+	mov	dword	ecx, [snake+queue.data+4*(edx-2)]
+	mov	dword	[snake+queue.data+4*(edx-1)], ecx
+	mov	dword	ecx, edx
+	dec	dword	ecx
+	jmp	short	.updateSnakeData
+.didntEatUpdateSnakeSize:
+	;; j = snake.size
+	mov	dword	edx, [snake+queue.size]
+	;; board[snake.data[j - 1]] = ' '
+	mov	dword	ecx, [snake+queue.data+4*(edx-1)]
+	mov	byte	[board+ecx], ' '
+	mov	dword	ecx, edx
+	dec	dword	ecx
+	jmp	short 	.updateSnakeData
+.updateSnakeData:
+	;; while (j >= 1)
+	cmp	dword	ecx, 0
+	jz	short	.updateHead
+	;; snake.data[j] = snake.data[j-1]
+	mov	dword	edx, [snake+queue.data+4*(ecx-1)]
+	mov	dword	[snake+queue.data+4*ecx], edx
+	dec	dword	ecx
+	mov	dword	edx, [snake+queue.data+4*ecx]
+	mov	byte	[board+edx], 'O'
+	jmp	short	.updateSnakeData
+.updateHead:
+	;; snake.data[0] = new_head
+	mov	dword	[snake+queue.data+0], esi
+	mov	byte	[board+esi], '@'
 .testFruit:
         ; check if a fruit will spawn during this frame
         call    near    randomHit
