@@ -53,7 +53,7 @@ error_msg:      db      'I did a poo poo', 10, 0
 go_up_cmd:      db      27, "[1A", 0
 win_msg:        db      'Congratulations! You WON!', 10, 0
 lose_msg:       db      'YOU DIED', 10, 0
-curr_dir:       dd      0
+curr_dir:       dd      +1	; default direction set to the right
 tty_state:      dd      0
 game_state:     dd      0
 fruit_rate:     dd      0.1
